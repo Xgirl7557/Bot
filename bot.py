@@ -1,7 +1,8 @@
 import os
 import logging
 from telegram import Update, InputFile
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
+from telegram.ext.filters import Filters
 from transformers import pipeline
 from diffusers import StableDiffusionPipeline
 from moviepy.editor import VideoFileClip, concatenate_videoclips
