@@ -1,9 +1,10 @@
 import os
 import logging
 from telegram import Update, InputFile
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
 from transformers import pipeline
 from diffusers import StableDiffusionPipeline
+import torch
 from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 # Configure logging
@@ -11,7 +12,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Load GPT-Neo model
-gpt_neo_generator = pipeline('text-generation', model='EleutherAI/gpt-neo-2.7B')
+gpt_neo_generator = pipeline('text-generation', model='EleutherAI/gpt-neo-1.3B')
 
 # Load Stable Diffusion model
 stable_diffusion_pipe = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
@@ -20,7 +21,7 @@ stable_diffusion_pipe = StableDiffusionPipeline.from_pretrained("CompVis/stable-
 
 # GPT-Neo Text Generation
 def generate_text(prompt: str) -> str:
-    response = gpt_neo_generator(prompt, max_length=100)
+    response = gpt_neo_generator(prompt, max_length=50)
     return response[0]['generated_text']
 
 # Stable Diffusion Image Generation
