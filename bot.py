@@ -1,94 +1,78 @@
-import os
 import logging
-from telegram import Update, InputFile
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from transformers import pipeline
-from diffusers import StableDiffusionPipeline
 import torch
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+import torchvision.transforms as transforms
+from PIL import Image
 
-# Configure logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Telegram bot token (replace with your actual token)
+TOKEN = "7411473634:AAGYbfeywKPq4YIQBcuHsNf0f_-u9NEEvzI"
+
+# Logging setup (optional but recommended)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load GPT-Neo model
-gpt_neo_generator = pipeline('text-generation', model='EleutherAI/gpt-neo-1.3B')
+# Initialize the text generation pipeline
+text_generator = pipeline("text-generation")
 
-# Load Stable Diffusion model
-stable_diffusion_pipe = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4")
-# Commenting out the following line as PythonAnywhere might not have CUDA support
-# stable_diffusion_pipe = stable_diffusion_pipe.to("cuda")
+# Initialize the CLIP model
+device = "cuda" if torch.cuda.is_available() else "cpu"
+clip_model, _ = torch.hub.load('openai/clip', 'ViT-B/32', pretrained=True)
+clip_model.to(device)
+preprocess = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
 
-# GPT-Neo Text Generation
-def generate_text(prompt: str) -> str:
-    response = gpt_neo_generator(prompt, max_length=50)
-    return response[0]['generated_text']
-
-# Stable Diffusion Image Generation
-def generate_image(prompt: str) -> str:
-    image = stable_diffusion_pipe(prompt).images[0]
-    image_path = "generated_image.png"
-    image.save(image_path)
-    return image_path
-
-# Video Editing (concatenation of videos)
-def edit_video(video_files: list, output_file="output.mp4") -> str:
-    clips = [VideoFileClip(file) for file in video_files]
-    final_clip = concatenate_videoclips(clips)
-    final_clip.write_videofile(output_file)
-    return output_file
-
-# Telegram bot handlers
+# Start command handler
 def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text('Hi! Use /chat, /image, or /video to interact with the bot.')
+    update.message.reply_text('Hi! I am your AI bot. Send me a message to get started.')
 
-def chat(update: Update, context: CallbackContext) -> None:
-    prompt = ' '.join(context.args)
-    response = generate_text(prompt)
-    update.message.reply_text(response)
-
-def image(update: Update, context: CallbackContext) -> None:
-    prompt = ' '.join(context.args)
-    image_path = generate_image(prompt)
-    update.message.reply_photo(photo=open(image_path, 'rb'))
-
-def video(update: Update, context: CallbackContext) -> None:
-    if not context.args:
-        update.message.reply_text("Please send the video files followed by the command.")
-        return
-
-    video_files = context.args
-    output_file = edit_video(video_files)
-    update.message.reply_video(video=open(output_file, 'rb'))
-
-def video_handler(update: Update, context: CallbackContext) -> None:
-    video_file = update.message.video.get_file()
-    video_path = f"input_{video_file.file_id}.mp4"
-    video_file.download(video_path)
+# Handle incoming messages
+def handle_message(update: Update, context: CallbackContext) -> None:
+    user_input = update.message.text
     
-    context.user_data['video_files'] = context.user_data.get('video_files', [])
-    context.user_data['video_files'].append(video_path)
-
-    update.message.reply_text("Video received. You can send more videos or use /video to process them.")
+    # Example: Text generation using Hugging Face Transformers
+    if user_input.startswith('/generate'):
+        prompt = user_input[len('/generate'):].strip()
+        response = text_generator(prompt, max_length=50, num_return_sequences=1)
+        bot_response = response[0]['generated_text'].strip()
+    
+    # Example: Text to image generation using OpenAI's CLIP (not fully implemented)
+    elif user_input.startswith('/image'):
+        prompt = user_input[len('/image'):].strip()
+        image_url = "https://example.com/image.jpg"  # Replace with an actual image URL
+        image = Image.open(requests.get(image_url, stream=True).raw)
+        image_tensor = preprocess(image).unsqueeze(0).to(device)
+        text = clip_model.encode_text([prompt]).to(device)
+        image_features = clip_model.encode_image(image_tensor).to(device)
+        logits_per_image, logits_per_text = clip_model(image_tensor, text)
+        probs = logits_per_image.softmax(dim=-1).cpu().detach().numpy()[0]
+        bot_response = f"Image classification result: {probs}"
+    
+    else:
+        bot_response = "I'm sorry, I didn't understand that command."
+    
+    update.message.reply_text(bot_response)
 
 def main() -> None:
-    # Set the Telegram bot token
-    telegram_bot_token = '7411473634:AAGYbfeywKPq4YIQBcuHsNf0f_-u9NEEvzI'
-
-    updater = Updater(telegram_bot_token)
-
+    # Initialize the Telegram Bot
+    updater = Updater(TOKEN, use_context=True)
+    
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
-
+    
     # Register handlers
     dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("chat", chat))
-    dispatcher.add_handler(CommandHandler("image", image))
-    dispatcher.add_handler(CommandHandler("video", video))
-    dispatcher.add_handler(MessageHandler(Filters.video, video_handler))
-
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    
     # Start the Bot
     updater.start_polling()
+    logger.info("Bot started. Press Ctrl+C to stop.")
+    
+    # Run the bot until you press Ctrl+C
     updater.idle()
 
 if __name__ == '__main__':
